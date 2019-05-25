@@ -5,12 +5,25 @@ compiler-check: match-exact
 packages:
  - '.'
 extra-deps:
+ - containers-0.5.9.1
+ - lens-4.15.4
+ - profunctors-5.2.2@sha256:44676db924d985a5a8b3644ecd56f00e27de69b59be01cedb842f1dfe04dc561
+ - th-abstraction-0.2.11.0@sha256:5c286870277705796887d0cbfa48a6aa5e0f206152592a54fbc550d8ce0c5ab5
  - aeson-1.1.1.0
  - miso-0.18.0.0
  - text-1.2.3.1
+ - ghcjs-dom-0.9.4.0@sha256:c2b3d25145e24b66a8a5078c0d750305b577aeff05957cf282d74f6e8d2424dd
+ - ghcjs-dom-jsffi-0.9.4.0@sha256:f5d837577b54605967d4f8877996965ed3a9a9921d07382fcb62ddd0617f5290
  - jsaddle-0.9.6.0@sha256:03b3792794759587c69dd93c79a3f743e0b4032a3617c38f7841f8e16327e013
  - github: pkinsky/merkle-schemes
-   commit: 3f372f9cca1d4f824cc2f24bbfc347d009b75dcb
+   commit: d55bac08189b0209725eb2cb694ca2a849c6ea47
+   subdirs:
+     - merkle-schemes
+ - ../hgit/hgit
+ # - github: pkinsky/hgit
+ #   commit: b9addbbd689cdbeb23df26f5830512e40cdfff95
+ #   subdirs:
+ #     - hgit
 setup-info:
   ghcjs:
     source:

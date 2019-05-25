@@ -1,6 +1,5 @@
 name:                app
 version:             0.1.0.0
-synopsis:            First miso app
 category:            Web
 build-type:          Simple
 cabal-version:       >=1.10
@@ -8,5 +7,16 @@ cabal-version:       >=1.10
 executable app
   js-sources:          js/util.js
   main-is:             Main.hs
-  build-depends:       base, bytestring, singletons, aeson, ghcjs-base, miso, merkle-schemes, jsaddle, text
+  build-depends: base
+               , aeson
+               , base64-bytestring
+               , bytestring
+               , ghcjs-base
+               , ghcjs-dom
+               , jsaddle
+               , miso
+               , merkle-schemes
+               , hgit
+               , network-uri
+               , text
   default-language:    Haskell2010
