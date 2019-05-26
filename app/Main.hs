@@ -5,8 +5,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE LambdaCase #-}
@@ -20,12 +18,15 @@ import Data.Aeson
 import Data.Bool (bool)
 import Data.Functor.Compose
 import Data.Monoid
-import Data.List (isPrefixOf)
+import qualified Data.Map as M
+import Data.List (isPrefixOf, intersperse)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 import qualified Data.ByteString.Base64 as Base64
 
+
+import qualified Clay as Clay
 
 -- | Miso framework import
 import Miso
@@ -55,6 +56,13 @@ import Data.ByteString.Lazy (toStrict)
 
 import Network.URI
 
+import qualified Data.Text.Lazy as TL
+
+
+
+-- TODO: organize to separate out my stuff
+import Css
+
 type PartiallySubstantiated f = Fix (HashAnnotated f `Compose` Maybe `Compose` f)
 
 -- | Type synonym for an application model
@@ -71,10 +79,15 @@ data FocusState
   | CommitFocus (HashableCommit (PartiallySubstantiated HashableCommit))
   deriving (Eq)
 
+data IPFSBase
+  = IPFSDaemon JSString
+  | MockSubdir JSString
+  deriving (Eq, Show)
+
 data Model
   = Model
   { uri :: URI -- current URI of application
-  , ipfsBase :: JSString -- base URI of IPFS host (todo: parse, validate)
+  , ipfsBase :: IPFSBase
   , focusState :: FocusState
   } deriving (Eq)
 
@@ -105,10 +118,18 @@ main :: IO ()
 main = do
     currentURI <- getCurrentURI
     toJSVal ("starting, with current URI:  " <> show currentURI) >>= logConsole
-    ipfsBase' <- promptWindow "enter ipfs daemon base URI" "http://localhost:5001"
-      >>= fromJSVal
-      >>= maybe (fail "could not convert prompt result to string") pure
-    toJSVal ("you entered this IPFS daemon base URL:  " <> show ipfsBase') >>= logConsole
+    -- ipfsBase' <- promptWindow "enter ipfs daemon base URI" "http://localhost:5001"
+    --   >>= fromJSVal
+    --   >>= maybe (fail "could not convert prompt result to string") pure
+    -- TODO: parse relative to URI
+    let ipfsBase' = MockSubdir "http://localhost:8000"
+    --           uriPath :: String
+    -- /ghc
+    -- uriQuery :: String
+    -- ?query
+    -- uriFragment :: String
+
+    -- toJSVal ("you entered this IPFS daemon base URL:  " <> show ipfsBase') >>= logConsole
     startApp App { model = Model
                          { uri = currentURI
                          , ipfsBase = ipfsBase'
@@ -255,7 +276,7 @@ renderBlob u hb = algDefined $ fmap (cata algFull) hb
     algDefined Empty = div_ [] [text "empty chunk"]
     algDefined (Chunk contents next)
           = div_ [] $
-          [ text $ toJSString contents
+          [ div_ [] $ intersperse (br_ []) $ fmap (text . toJSString) $ lines contents
           , next
           ]
 
@@ -308,9 +329,35 @@ renderCommit u hc = ul_ [] [algDefined $ fmap (cata algFull) hc]
           , ul_ [] parents
           ]
 
-viewModel' :: Model -> View Action
-viewModel' (Model u _ fs) = handler $ fragmentRouting (uriFragment u)
+solarizedViolet, solarizedBase3 :: MisoString
+solarizedViolet = "#6c71c4"
+solarizedBase3  = "#fdf6e3"
+solarizedBase02  = "#073642"
+
+
+drawWidget :: View Action
+drawWidget = div_ [] [elem]
+-- drawWidget = div_ [style_ attrs] [elem]
   where
+    elem =  div_ [class_ "myclass"] [text "test text"]
+    -- attrs = M.fromList [ ("border-style", "solid")
+    --                    , ("border-width", "3px")
+    --                    , ("border-color", solarizedViolet)
+    --                    , ("background-color", solarizedBase3)
+    --                    , ("background-color", solarizedBase3)
+    --                    , ("color", solarizedBase02)
+    --                    ]
+
+
+viewModel' :: Model -> View Action
+viewModel' (Model u _ fs) = div_ []
+      -- [ nodeHtml "style" [] [text ".myclass {\n background-color: #6c71c4;\n}"]
+      [ nodeHtml "style" [] [text $ toJSString $ TL.toStrict $ Clay.render myCSS]
+      , handler $ fragmentRouting (uriFragment u)
+      ]
+
+  where
+
     handler Nothing = home fs
     handler (Just (BlobType    _h)) = case fs of -- NOTE: doesn't use h, which feels weird
       (BlobFocus b)   -> renderBlob u b
@@ -348,6 +395,12 @@ viewModel' (Model u _ fs) = handler $ fragmentRouting (uriFragment u)
                ]
       , br_ []
       , text "press enter to load commit from IPFS daemon via hash"
+      , br_ []
+      , br_ []
+      , br_ []
+      , br_ []
+      , br_ []
+      , drawWidget
       ]
     home _ = div_ [] ["not expected state (home but not nofocus - loading release/torrent?)"]
 
@@ -388,12 +441,45 @@ instance FromJSON (IPFSPutResp i) where
 ipfsGet :: MS.GetCapabilityShallow IO RawIPFSHash f -> Hash f -> IO (f (Hash f))
 ipfsGet cap h = MS.gcGetShallow cap h >>= maybe (fail "ipfs get failed for hash, TODO: add better msg") pure
 
-ipfsGetCapShallow
+
+-- | 'IPFS' fetcher based on directory with files in same static site
+--   used to avoid complexity for demos
+mockIpfsGetCapShallow
   :: FromJSON (f (Hash f))
   => String
   -> JSString
   -> MS.GetCapabilityShallow IO RawIPFSHash f
-ipfsGetCapShallow typeName baseUri = MS.GetCapabilityShallow $ \(Const (RawIPFSHash h)) -> do
+mockIpfsGetCapShallow typeName baseUri = MS.GetCapabilityShallow $ \(Const (RawIPFSHash h)) -> do
+      (toJSVal $ "get value of type: " ++ typeName ++ " via hash " ++ show h) >>= logConsole
+
+      let req = Request { reqMethod = JS.GET
+                        , reqURI =  baseUri <> "/mockipfs/" <> toJSString (T.unpack h) <> ".json"
+                        , reqLogin = Nothing
+                        , reqHeaders = []
+                        , reqWithCredentials = False
+                        , reqData = NoData
+                        }
+
+      Just resp <- contents <$> xhrByteString req -- yolo, pattern match
+      case eitherDecodeStrict resp of
+        Left s -> error s
+        Right (DagNode x _) -> pure $ Just x
+
+
+ipfsGetCapShallow
+  :: FromJSON (f (Hash f))
+  => String
+  -> IPFSBase
+  -> MS.GetCapabilityShallow IO RawIPFSHash f
+ipfsGetCapShallow typeName (IPFSDaemon node) = ipfsGetCapShallow' typeName node
+ipfsGetCapShallow typeName (MockSubdir path) = mockIpfsGetCapShallow typeName path
+
+ipfsGetCapShallow'
+  :: FromJSON (f (Hash f))
+  => String
+  -> JSString
+  -> MS.GetCapabilityShallow IO RawIPFSHash f
+ipfsGetCapShallow' typeName baseUri = MS.GetCapabilityShallow $ \(Const (RawIPFSHash h)) -> do
       (toJSVal $ "get value of type: " ++ typeName ++ " via hash " ++ show h) >>= logConsole
 
       let req = Request { reqMethod = JS.GET

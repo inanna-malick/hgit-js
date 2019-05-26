@@ -7,10 +7,17 @@ cabal-version:       >=1.10
 executable app
   js-sources:          js/util.js
   main-is:             Main.hs
+  other-modules:
+      Css
+      Solarized
+  hs-source-dirs:
+      app
   build-depends: base
                , aeson
                , base64-bytestring
                , bytestring
+               , clay
+               , containers
                , ghcjs-base
                , ghcjs-dom
                , jsaddle
