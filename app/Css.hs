@@ -11,24 +11,23 @@ import qualified Solarized as Sol
 myCSS :: Css
 myCSS = do
     body ?
-      do background  Sol.base2
+      do background  Sol.base3
          color       Sol.base02
-         border      dashed (px 2) Sol.violet
     ".entity" ?
       do background  Sol.base2
+         padding (px 5) (px 10) (px 10) (px 10)
          color       Sol.base02
-         ".blob" ?
-           border      solid (px 2) Sol.violet
-         ".dir" ?
-           border      solid (px 2) Sol.magenta
-         ".commit" ?
-           border      solid (px 2) Sol.blue
+         borderStyle solid
+         borderWidth (px 2)
     ".hashlink" ?
       do background  Sol.base2
+         padding (px 5) (px 10) (px 10) (px 10)
          color       Sol.base02
-         ".blob" ?
-           border      dashed (px 2) Sol.violet
-         ".dir" ?
-           border      dashed (px 2) Sol.magenta
-         ".commit" ?
-           border      dashed (px 2) Sol.blue
+         borderStyle dashed
+         borderWidth (px 2)
+    ".blob" ?
+      borderColor Sol.violet
+    ".dir" ?
+      borderColor Sol.magenta
+    ".commit" ?
+      borderColor Sol.blue

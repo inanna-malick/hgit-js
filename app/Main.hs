@@ -265,7 +265,7 @@ renderBlob u hb = algDefined $ fmap (cata algFull) hb
   where
     algFull :: (HashAnnotated Blob `Compose` Maybe `Compose` Blob) (View Action) -> View Action
     algFull (Compose (h, Compose Nothing))
-          = div_ []
+          = div_ [ class_ "hashlink blob"]
           [ text $ toJSString $ "unexpanded branch: " ++ show (unRawIPFSHash (getConst h))
           , button_ [onClick $ ExpandHash (BlobType h)]
                     [text $ toJSString $ "expand blob leaf: " ++ show (unRawIPFSHash (getConst h))]
@@ -273,27 +273,35 @@ renderBlob u hb = algDefined $ fmap (cata algFull) hb
     algFull (Compose (h, Compose (Just x))) = algDefined x
 
     algDefined :: Blob (View Action) -> View Action
-    algDefined Empty = div_ [] [text "empty chunk"]
+    algDefined Empty = div_ [ class_ "entity blob"] [text "empty chunk"]
     algDefined (Chunk contents next)
-          = div_ [] $
-          [ div_ [] $ intersperse (br_ []) $ fmap (text . toJSString) $ lines contents
+          = div_ [class_ "entity blob"] $
+          [ div_ [] $ intersperse (br_ []) $ fmap (text . toJSString . mkNbsp) $ lines contents
           , next
           ]
+
+-- janky function to make sure spaces render right, only supports spaces because I don't use tabs
+mkNbsp :: String -> String
+mkNbsp (' ':xs) = '\160' : mkNbsp xs
+mkNbsp (x:xs) = x : mkNbsp xs
+mkNbsp [] = []
 
 
 
 renderDir :: URI -> HashableDir (PartiallySubstantiated HashableDir) -> View Action
-renderDir u hd = div_ [] [algDefined $ fmap (cata algFull) hd]
+renderDir u hd = algDefined $ fmap (cata algFull) hd
   where
     algFull :: (HashAnnotated HashableDir `Compose` Maybe `Compose` HashableDir) (View Action) -> View Action
     algFull (Compose (h, Compose Nothing))
-          = button_ [onClick $ ExpandHash (DirType h)]
-                    [text $ toJSString $ "expand leaf: " ++ show (unRawIPFSHash (getConst h))]
+          = div_ [class_ "hashlink dir"]
+                 [button_ [onClick $ ExpandHash (DirType h)]
+                          [text $ toJSString $ "expand leaf: " ++ show (unRawIPFSHash (getConst h))]
+                 ]
     algFull (Compose (h, Compose (Just x))) = algDefined x
 
     algDefined :: HashableDir (View Action) -> View Action
     algDefined (Dir contents)
-          = div_ [] $
+          = div_ [class_ "entity dir"] $
           [ text "directory contents:"
           , br_ []
           , ul_ [] $ fmap mkC contents
@@ -306,11 +314,11 @@ renderDir u hd = div_ [] [algDefined $ fmap (cata algFull) hd]
 
 -- TODO: could have all fields expandable, Commit (PartiallySubstantiated Dir) instead
 renderCommit :: URI -> HashableCommit (PartiallySubstantiated HashableCommit) -> View Action
-renderCommit u hc = ul_ [] [algDefined $ fmap (cata algFull) hc]
+renderCommit u hc = algDefined $ fmap (cata algFull) hc
   where
     algFull :: (HashAnnotated HashableCommit `Compose` Maybe `Compose` HashableCommit) (View Action) -> View Action
     algFull (Compose (h, Compose Nothing))
-          = li_ []
+          = li_ [class_ "hashlink commit"]
           [ button_ [onClick $ ExpandHash (CommitType h)]
                     [text $ toJSString $ "expand: " ++ show (unRawIPFSHash (getConst h))]
           ]
@@ -318,16 +326,18 @@ renderCommit u hc = ul_ [] [algDefined $ fmap (cata algFull) hc]
 
     algDefined :: HashableCommit (View Action) -> View Action
     algDefined (Commit msg root parents)
-          = li_ [] $
+          = li_ [class_ "entity commit"] $
           [ text $ toJSString $ "msg: " ++ msg
           , br_ []
           , button_ [onClick $ goDir u root]
                     [text $ toJSString $ "root dir: " ++ show (unRawIPFSHash (getConst root))]
           , br_ []
-          , text "parents: "
-          , br_ []
-          , ul_ [] parents
-          ]
+          ] ++ case parents of
+                 [] -> [text "commit has no parents"]
+                 parents' -> [ text "parents: "
+                             , br_ []
+                             , ul_ [] parents
+                             ]
 
 solarizedViolet, solarizedBase3 :: MisoString
 solarizedViolet = "#6c71c4"
@@ -360,13 +370,13 @@ viewModel' (Model u _ fs) = div_ []
 
     handler Nothing = home fs
     handler (Just (BlobType    _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (BlobFocus b)   -> renderBlob u b
+      (BlobFocus b)   -> div_ [] [text "focus: blob", br_ [], renderBlob u b]
       x               -> div_ [] [text "unexpected state, (expected BlobFocus)"]
     handler (Just (DirType     _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (DirFocus d)    -> renderDir u d
+      (DirFocus d)    -> div_ [] [text "focus: dir", br_ [], renderDir u d]
       x               -> div_ [] [text "unexpected state, (expected DirFocus)"]
     handler (Just (CommitType  _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (CommitFocus c) -> renderCommit u c
+      (CommitFocus c) -> div_ [] [text "focus: commit", br_ [], renderCommit u c]
       x               -> div_ [] [text "unexpected state, (expected CommitFocus)"]
 
     home (NoFocus b d c) = div_ []
