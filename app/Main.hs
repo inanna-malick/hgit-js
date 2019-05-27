@@ -121,15 +121,17 @@ updateModel a m = updateFocusState a (focusState m)
        in m' <# do
             toJSVal ("handleURI: " <> show u) >>= logConsole
 
-            case fragmentRouting (uriFragment u) of
-                (Just (BlobHash h)) -> do
+            let mhgmh = fragmentRouting (uriFragment u)
+            case mhgmh of
+              Just hgmh -> case hgmh of
+                BlobHash h -> do
                     toJSVal ("select blob" :: String) >>= logConsole
                     toJSVal ("fetching blob from hash:" <> show h) >>= logConsole
                     x <- ipfsGet (ipfsGetCapShallow "blob" (ipfsBase m)) h
                     let x' = fmap (\h -> Fix $ Compose (h, Compose Nothing)) x
-                    pure . FocusAction $ FocusBlob x'
+                    pure . FocusAction hgmh $ FocusBlob x'
 
-                (Just (DirHash h)) -> do
+                DirHash h -> do
                     toJSVal ("select dir" :: String) >>= logConsole
                     toJSVal ("fetching dir from hash:" <> show h) >>= logConsole
                     x <- ipfsGet (ipfsGetCapShallow "dir" (ipfsBase m)) h
@@ -138,39 +140,39 @@ updateModel a m = updateFocusState a (focusState m)
                         f (DirEntity dh) = DirEntity dh
                         x'' = fmap (\h -> Fix $ Compose (h, Compose Nothing)) x'
 
-                    pure . FocusAction $ FocusDir x''
+                    pure . FocusAction hgmh $ FocusDir x''
 
-                (Just (CommitHash h)) -> do
+                CommitHash h -> do
                     toJSVal ("select commit" :: String) >>= logConsole
                     toJSVal ("fetching commit from hash:" <> show h) >>= logConsole
                     x <- ipfsGet (ipfsGetCapShallow "commit" (ipfsBase m)) h
                     let x' = x { commitRootDir = Fix (Compose (commitRootDir x, Compose Nothing))}
                         x'' = fmap (\h -> Fix $ Compose (h, Compose Nothing)) x'
 
-                    pure . FocusAction $ FocusCommit x''
+                    pure . FocusAction hgmh $ FocusCommit x''
 
-                Nothing -> do
-                  toJSVal ("home handler" :: String) >>= logConsole
-                  toJSVal ("url: " <> show (uri m)) >>= logConsole
-                  pure Reset -- reset state, used when transitioning back to hone state
+              Nothing -> do
+                toJSVal ("home handler" :: String) >>= logConsole
+                toJSVal ("url: " <> show (uri m)) >>= logConsole
+                pure Reset -- reset state, used when transitioning back to hone state
 
 
-    updateFocusState (FocusAction (FocusBlob   b)) _ =
-      noEff $ m { focusState = FocusState $ FocusBlob b }
-    updateFocusState (FocusAction (FocusDir    d)) _ =
-      noEff $ m { focusState = FocusState $ FocusDir d }
-    updateFocusState (FocusAction (FocusCommit c)) _ =
-      noEff $ m { focusState = FocusState $ FocusCommit c }
+    updateFocusState (FocusAction h (FocusBlob   b)) _ =
+      noEff $ m { focusState = FocusState h $ FocusBlob b }
+    updateFocusState (FocusAction h (FocusDir    d)) _ =
+      noEff $ m { focusState = FocusState h $ FocusDir d }
+    updateFocusState (FocusAction h (FocusCommit c)) _ =
+      noEff $ m { focusState = FocusState h $ FocusCommit c }
 
     -- used to update a leaf hash of some type if present (todo these could all be one thing maybe?)
     updateFocusState (ExpandHash hgmh) fs = case fs of
-      FocusState (FocusBlob c) -> m <# do
+      FocusState _h (FocusBlob c) -> m <# do
         toJSVal ("expand hash (blob)" ++ show hgmh) >>= logConsole
 
         c' <- traverse (cataM $ expandBlobAlg m hgmh) c
-        pure . FocusAction $ FocusBlob c'
+        pure . FocusAction _h  $ FocusBlob c'
 
-      FocusState (FocusDir c) -> m <# do
+      FocusState _h (FocusDir c) -> m <# do
         toJSVal ("expand hash (dir)" ++ show hgmh) >>= logConsole
 
         c' <- traverse (cataM $ expandDirAlg m hgmh) c
@@ -179,15 +181,15 @@ updateModel a m = updateFocusState a (focusState m)
             f (DirEntity x) = pure $ DirEntity x
         ls' <- traverse (traverse f) (dirEntries c')
 
-        pure . FocusAction $ FocusDir $ c' { dirEntries = ls'}
+        pure . FocusAction _h $ FocusDir $ c' { dirEntries = ls'}
 
-      FocusState (FocusCommit c) -> m <# do
+      FocusState _h (FocusCommit c) -> m <# do
         toJSVal ("expand hash (commit)" ++ show hgmh) >>= logConsole
 
         c' <- traverse (cataM $ expandCommitAlg m hgmh) c
         rootDir <- cataM (expandDirAlg m hgmh) (commitRootDir c')
 
-        pure . FocusAction $ FocusCommit $ c' { commitRootDir = rootDir}
+        pure . FocusAction _h $ FocusCommit $ c' { commitRootDir = rootDir}
       _             -> fail "whoops! TODO better msg (expandhash match failure)"
 
     updateFocusState Reset _ = noEff $ m { focusState = NoFocus "" "" ""}
@@ -262,26 +264,27 @@ expandCommitAlg m hgmh (Compose (h, Compose (Just c))) = do -- need to recurse o
   rootDir <- cataM (expandDirAlg m hgmh) (commitRootDir c)
   pure $ Fix $ Compose (h, Compose (Just c { commitRootDir = rootDir }))
 
--- hTable :: HGitMerkleHash -> [View Action] -> View Action
--- hTable hgmh vs
---   = table_ [class_ class']
---   [ thead_ [] [tr_ [] [
---                       [ button_ [onClick $ goto hgmh, class_ class']
---                                 [text $ "goto: " ++ header]
---                       ]
---                       ]]
---   , tbody_ [] [tr_ [] vs
---               ]
---   ]
---   where
---     class' = case hgmh of
---       BlobHash h   -> "blob"
---       DirHash h    -> "dir"
---       CommitHash h -> "commit"
---     header = case hgmh of
---       BlobHash h   -> toJSString . unRawIPFSHash $ getConst h
---       DirHash h    -> toJSString . unRawIPFSHash $ getConst h
---       CommitHash h -> toJSString . unRawIPFSHash $ getConst h
+hTable :: URI -> HGitMerkleHash -> View Action -> View Action
+hTable u hgmh v
+  = table_ [class_ $ "entity " <> class']
+  [ thead_ [class_ $ "entity " <> class']
+           [th_ [class_ $ "entity " <> class']
+                   [ button_ [onClick $ goto u hgmh, class_ class']
+                             [text header]
+                   ]
+           ]
+  , tbody_ [class_ $ "entity " <> class']
+    [ tr_ [class_ $ "entity " <> class'] [v]]
+  ]
+  where
+    class' = case hgmh of
+      BlobHash h   -> "blob"
+      DirHash h    -> "dir"
+      CommitHash h -> "commit"
+    header = case hgmh of
+      BlobHash h   -> "set focus to blob: " <> renderPartialHash h
+      DirHash h    -> "set focus to dir: " <> renderPartialHash h
+      CommitHash h -> "set focus to commit: " <> renderPartialHash h
 
 renderBlob :: URI -> PartialBlob1 -> View Action
 renderBlob u hb = blobAlgDefined u $ fmap (cata $ blobAlgFull u) hb
@@ -290,14 +293,14 @@ blobAlgFull :: URI -> Algebra (HashAnnotated Blob `Compose` Maybe `Compose` Blob
 blobAlgFull u (Compose (h, Compose Nothing))
       = div_ [ class_ "hashlink blob"]
       [ button_ [onClick $ ExpandHash (BlobHash h), class_ "blob"]
-                [text $ toJSString $ unRawIPFSHash (getConst h)]
+                [text $ "expand blob with hash: " <> renderPartialHash h]
       ]
-blobAlgFull u (Compose (h, Compose (Just x))) = blobAlgDefined u x
+blobAlgFull u (Compose (h, Compose (Just x))) = hTable u (BlobHash h) $ blobAlgDefined u x
 
 blobAlgDefined :: URI -> Blob (View Action) -> View Action
-blobAlgDefined u (ChunkList chunks) = div_ [ class_ "entity blob"] $ text "blob chunk list:" : chunks
+blobAlgDefined u (ChunkList chunks) = div_ [] $ text "blob chunk list:" : chunks
 blobAlgDefined u (Chunk contents)
-      = div_ [class_ "entity blob"] $ intersperse (br_ []) $ fmap (text . toJSString . mkNbsp) $ lines contents
+      = div_ [] $ intersperse (br_ []) $ fmap (text . toJSString . mkNbsp) $ lines contents
 
 -- janky function to make sure spaces render right, only supports spaces because I don't use tabs
 mkNbsp :: String -> String
@@ -313,21 +316,20 @@ renderDir u hd = dirAlgDefined u $ fmap (cata $ dirAlgFull u) hd
 dirAlgFull :: URI -> Algebra (HashAnnotated HashableDir `Compose` Maybe `Compose` Dir PartialBlob) (View Action)
 dirAlgFull u (Compose (h, Compose Nothing))
       = div_ [class_ "hashlink dir"]
-            [button_ [onClick $ ExpandHash (DirHash h), class_ "dir"]
-                      [text $ toJSString $ unRawIPFSHash (getConst h)]
-            ]
-dirAlgFull u (Compose (h, Compose (Just x))) = dirAlgDefined u x
+             [button_ [onClick $ ExpandHash (DirHash h), class_ "dir"]
+                      [text $ "expand dir with hash: " <> renderPartialHash h]
+             ]
+dirAlgFull u (Compose (h, Compose (Just x))) = hTable u (DirHash h) $ dirAlgDefined u x
 
 dirAlgDefined :: URI -> Algebra (Dir PartialBlob) (View Action)
 dirAlgDefined u (Dir contents)
-      = div_ [class_ "entity dir"] $
+      = div_ []
       [ ul_ [] $ fmap mkC contents
       ]
   where
     mkC (fp, FileEntity h) = li_ [] [text $ toJSString $ "file: " ++ fp, cata (blobAlgFull u) h]
     mkC (fp, DirEntity  x) = li_ [] [text $ toJSString $ "dir: "  ++ fp, x]
 
--- TODO: could have all fields expandable, Commit (PartiallySubstantiated Dir) instead
 renderCommit :: URI -> PartialCommit1 -> View Action
 renderCommit u hc = commitAlgDefined u $ fmap (cata $ commitAlgFull u) hc
 
@@ -335,13 +337,13 @@ commitAlgFull :: URI -> Algebra (HashAnnotated HashableCommit `Compose` Maybe `C
 commitAlgFull u (Compose (h, Compose Nothing))
       = li_ [class_ "hashlink commit"]
       [ button_ [onClick $ ExpandHash (CommitHash h), class_ "commit"]
-                [text $ toJSString $ unRawIPFSHash (getConst h)]
+                [text $ "expand commit with hash: " <> renderPartialHash h]
       ]
-commitAlgFull u (Compose (h, Compose (Just x))) = commitAlgDefined u x
+commitAlgFull u (Compose (h, Compose (Just x))) = hTable u (CommitHash h) $ commitAlgDefined u x
 
 commitAlgDefined :: URI -> Algebra (Commit PartialDir) (View Action)
 commitAlgDefined u (Commit msg root parents)
-      = li_ [class_ "entity commit"] $
+      = div_ [] $
       [ text $ toJSString $ "msg: " ++ msg
       , br_ []
       , cata (dirAlgFull u) root
@@ -350,12 +352,11 @@ commitAlgDefined u (Commit msg root parents)
               [] -> [text "commit has no parents"]
               parents' -> [ text "parents: "
                           , br_ []
-                          , ul_ [] parents
+                          , ul_ [] $ (\x -> li_ [] [x]) <$> parents
                           ]
 
 viewModel' :: Model -> View Action
 viewModel' (Model u _ fs) = div_ []
-      -- [ nodeHtml "style" [] [text ".myclass {\n background-color: #6c71c4;\n}"]
       [ nodeHtml "style" [] [text $ toJSString $ TL.toStrict $ Clay.render myCSS]
       , handler $ fragmentRouting (uriFragment u)
       ]
@@ -364,13 +365,13 @@ viewModel' (Model u _ fs) = div_ []
 
     handler Nothing = home fs
     handler (Just (BlobHash    _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (FocusState (FocusBlob b))   -> div_ [] [text "focus: blob", br_ [], renderBlob u b]
+      (FocusState h (FocusBlob b))   -> div_ [] [text "top-level focus: blob", br_ [], hTable u h $ renderBlob u b]
       x               -> div_ [] [text "unexpected state, (expected FocusBlob)"]
     handler (Just (DirHash     _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (FocusState (FocusDir d))    -> div_ [] [text "focus: dir", br_ [], renderDir u d]
+      (FocusState h (FocusDir d))    -> div_ [] [text "top-level focus: dir", br_ [], hTable u h $ renderDir u d]
       x               -> div_ [] [text "unexpected state, (expected FocusDir)"]
     handler (Just (CommitHash  _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (FocusState (FocusCommit c)) -> div_ [] [text "focus: commit", br_ [], renderCommit u c]
+      (FocusState h (FocusCommit c)) -> div_ [] [text "top-level focus: commit", br_ [], hTable u h $ renderCommit u c]
       x               -> div_ [] [text "unexpected state, (expected FocusCommit)"]
 
     home (NoFocus b d c) = div_ []
@@ -540,7 +541,7 @@ data FocusState
 
   -- after entering a hash, can be lazily expanded.. (via hash lookup?)
   -- NOTE: what if I use IORefs?!
-  | FocusState HGitMerkleFocus
+  | FocusState HGitMerkleHash HGitMerkleFocus -- TODO.. hash and focus should be same type (assumption)
   deriving (Eq)
 
 data IPFSBase
@@ -562,7 +563,7 @@ data Action
 
   | ExpandHash HGitMerkleHash -- used to update a leaf hash of some type if present
 
-  | FocusAction HGitMerkleFocus
+  | FocusAction HGitMerkleHash HGitMerkleFocus -- TODO.. hash and focus should be same type (assumption)
   | DownloadFile FilePath
 
   -- todo branching sum type? getting kinda big..
@@ -584,9 +585,12 @@ instance Show HGitMerkleFocus where
   show (FocusDir _) = "focus dir"
   show (FocusBlob _) = "focus blob"
 
-
 data HGitMerkleHash
   = BlobHash   (Hash Blob)
   | DirHash    (Hash HashableDir)
   | CommitHash (Hash HashableCommit)
   deriving (Eq, Show)
+
+renderPartialHash :: Hash x -> MisoString
+renderPartialHash = toJSString . T.take hashDisplayLen . unRawIPFSHash . getConst
+  where hashDisplayLen = 7
