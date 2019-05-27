@@ -15,13 +15,13 @@ myCSS = do
          color       Sol.base02
     ".entity" ?
       do background  Sol.base2
-         padding (px 10) (px 10) (px 10) (px 10)
+         padding (px 10) (px 5) (px 5) (px 10)
          color       Sol.base02
          borderStyle solid
          borderWidth (px 2)
     ".hashlink" ?
       do background  Sol.base2
-         padding (px 10) (px 10) (px 10) (px 10)
+         padding (px 10) (px 5) (px 5) (px 10)
          color       Sol.base02
          borderStyle dashed
          borderWidth (px 2)

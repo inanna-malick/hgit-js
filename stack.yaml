@@ -16,14 +16,13 @@ extra-deps:
  - ghcjs-dom-jsffi-0.9.4.0@sha256:f5d837577b54605967d4f8877996965ed3a9a9921d07382fcb62ddd0617f5290
  - jsaddle-0.9.6.0@sha256:03b3792794759587c69dd93c79a3f743e0b4032a3617c38f7841f8e16327e013
  - github: pkinsky/merkle-schemes
-   commit: d55bac08189b0209725eb2cb694ca2a849c6ea47
+   commit: 6ab1e4cdfabf1dc6117b6c9e1b10c1770b783672
    subdirs:
      - merkle-schemes
- - ../hgit/hgit
- # - github: pkinsky/hgit
- #   commit: b9addbbd689cdbeb23df26f5830512e40cdfff95
- #   subdirs:
- #     - hgit
+ - github: pkinsky/hgit
+   commit: bb1e2b5bd7d9b8ed8ba58ff27bbeb3c1bf8e9b03
+   subdirs:
+     - hgit
 setup-info:
   ghcjs:
     source:
