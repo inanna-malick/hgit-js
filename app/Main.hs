@@ -58,60 +58,9 @@ import Network.URI
 
 import qualified Data.Text.Lazy as TL
 
-
-
 -- TODO: organize to separate out my stuff
 import Css
 
-type PartiallySubstantiated f = Fix (HashAnnotated f `Compose` Maybe `Compose` f)
-
--- | Type synonym for an application model
-data FocusState
-  = NoFocus
-      MisoString -- blob hash field value
-      MisoString -- dir hash field value
-      MisoString -- commit hash field value
-
-
-  -- after entering a hash, can be lazily expanded.. (with hash lookup?)
-  | BlobFocus   (Blob   (PartiallySubstantiated Blob))
-  | DirFocus    (HashableDir (PartiallySubstantiated HashableDir))
-  | CommitFocus (HashableCommit (PartiallySubstantiated HashableCommit))
-  deriving (Eq)
-
-data IPFSBase
-  = IPFSDaemon JSString
-  | MockSubdir JSString
-  deriving (Eq, Show)
-
-data Model
-  = Model
-  { uri :: URI -- current URI of application
-  , ipfsBase :: IPFSBase
-  , focusState :: FocusState
-  } deriving (Eq)
-
-data Action
-  = UpdateBlobHashField   MisoString
-  | UpdateDirHashField    MisoString
-  | UpdateCommitHashField MisoString
-
-  | ExpandHash HGitMerkleHash -- used to update a leaf hash of some type if present
-
-  -- NOTE: do these actually need hashes? maybe not
-  | FocusBlob   (Blob (PartiallySubstantiated Blob))
-  | FocusDir    (HashableDir (PartiallySubstantiated HashableDir))
-  | FocusCommit (HashableCommit (PartiallySubstantiated HashableCommit))
-  | DownloadFile FilePath
-
-
-  -- todo branching sum type? getting kinda big..
-  | HandleURI URI
-  | ChangeURI URI
-
-  | Reset
-  | NoOp
-  deriving (Eq)
 
 -- | Entry point for a miso application
 main :: IO ()
@@ -130,23 +79,26 @@ main = do
     -- uriFragment :: String
 
     -- toJSVal ("you entered this IPFS daemon base URL:  " <> show ipfsBase') >>= logConsole
-    startApp App { model = Model
-                         { uri = currentURI
-                         , ipfsBase = ipfsBase'
-                         , focusState = NoFocus "" "" ""
-                         }
-                 , initialAction = HandleURI currentURI
-                 , ..
-                 }
+    startApp $ app currentURI ipfsBase'
 
-  where
-    update        = updateModel
-    view          = viewModel'
-    events        = defaultEvents -- default delegated events
-    -- pops this event on URI update - wonder what other subscriptions exist?
-    -- presumably this only applies to window events which (I think are basically just uri change, mouse move, etc)
-    subs          = [uriSub HandleURI ]
-    mountPoint    = Nothing       -- mount point for application (Nothing defaults to 'body')
+
+
+app :: URI -> IPFSBase -> App Model Action
+app currentURI ipfsBase' = do
+    App { model = Model
+                { uri = currentURI
+                , ipfsBase = ipfsBase'
+                , focusState = NoFocus "" "" ""
+                }
+        , initialAction = HandleURI currentURI
+        , update = updateModel
+        , view = viewModel'
+        , events = defaultEvents -- default delegated events
+          -- pops this event on URI update - wonder what other subscriptions exist?
+          -- presumably this only applies to window events which (I think are basically just uri change, mouse move, etc)
+        , subs          = [uriSub HandleURI ]
+        , mountPoint    = Nothing       -- mount point for application (Nothing defaults to 'body')
+        }
 
 
 -- | Updates model, optionally introduces side effects
@@ -168,26 +120,26 @@ updateModel a m = updateFocusState a (focusState m)
             toJSVal ("handleURI: " <> show u) >>= logConsole
 
             case fragmentRouting (uriFragment u) of
-                (Just (BlobType h)) -> do
+                (Just (BlobHash h)) -> do
                     toJSVal ("select blob" :: String) >>= logConsole
                     toJSVal ("fetching blob from hash:" <> show h) >>= logConsole
                     x <- ipfsGet (ipfsGetCapShallow "blob" (ipfsBase m)) h
                     let x' = fmap (\h -> Fix $ Compose (h, Compose Nothing)) x
-                    pure $ FocusBlob x' -- todo: should handle failure/not found case gracefully, eventually
+                    pure . FocusAction $ FocusBlob x' -- todo: should handle failure/not found case gracefully, eventually
 
-                (Just (DirType h)) -> do
+                (Just (DirHash h)) -> do
                     toJSVal ("select dir" :: String) >>= logConsole
                     toJSVal ("fetching dir from hash:" <> show h) >>= logConsole
                     x <- ipfsGet (ipfsGetCapShallow "dir" (ipfsBase m)) h
                     let x' = fmap (\h -> Fix $ Compose (h, Compose Nothing)) x
-                    pure $ FocusDir x' -- todo: should handle failure/not found case gracefully, eventually
+                    pure . FocusAction $ FocusDir x' -- todo: should handle failure/not found case gracefully, eventually
 
-                (Just (CommitType h)) -> do
+                (Just (CommitHash h)) -> do
                     toJSVal ("select commit" :: String) >>= logConsole
                     toJSVal ("fetching commit from hash:" <> show h) >>= logConsole
                     x <- ipfsGet (ipfsGetCapShallow "commit" (ipfsBase m)) h
                     let x' = fmap (\h -> Fix $ Compose (h, Compose Nothing)) x
-                    pure $ FocusCommit x' -- todo: should handle failure/not found case gracefully, eventually
+                    pure . FocusAction $ FocusCommit x' -- todo: should handle failure/not found case gracefully, eventually
 
                 Nothing -> do
                   toJSVal ("home handler" :: String) >>= logConsole
@@ -195,16 +147,16 @@ updateModel a m = updateFocusState a (focusState m)
                   pure Reset -- reset state, used when transitioning back to hone state
 
 
-    updateFocusState (FocusBlob   b) _ =
-      noEff $ m { focusState = BlobFocus b }
-    updateFocusState (FocusDir    d) _ =
-      noEff $ m { focusState = DirFocus d }
-    updateFocusState (FocusCommit c) _ =
-      noEff $ m { focusState = CommitFocus c }
+    updateFocusState (FocusAction (FocusBlob   b)) _ =
+      noEff $ m { focusState = FocusState $ FocusBlob b }
+    updateFocusState (FocusAction (FocusDir    d)) _ =
+      noEff $ m { focusState = FocusState $ FocusDir d }
+    updateFocusState (FocusAction (FocusCommit c)) _ =
+      noEff $ m { focusState = FocusState $ FocusCommit c }
 
     -- used to update a leaf hash of some type if present (todo these could all be one thing maybe?)
-    updateFocusState (ExpandHash (BlobType h)) fs = case fs of
-      BlobFocus c -> m <# do
+    updateFocusState (ExpandHash (BlobHash h)) fs = case fs of
+      FocusState (FocusBlob c) -> m <# do
         toJSVal ("expand hash (blob)" ++ show h) >>= logConsole
 
         let alg x@(Compose (h', Compose Nothing))
@@ -217,11 +169,11 @@ updateModel a m = updateFocusState a (focusState m)
             alg x = pure $ Fix x
 
         c' <- traverse (cataM alg) c
-        pure $ FocusBlob c'
+        pure . FocusAction $ FocusBlob c'
       _             -> fail "whoops! TODO better msg (blob focus state expandhash match failure)"
 
-    updateFocusState (ExpandHash (DirType h)) fs = case fs of
-      DirFocus c -> m <# do
+    updateFocusState (ExpandHash (DirHash h)) fs = case fs of
+      FocusState (FocusDir c) -> m <# do
         toJSVal ("expand hash (dir)" ++ show h) >>= logConsole
 
         let alg x@(Compose (h', Compose Nothing))
@@ -234,11 +186,11 @@ updateModel a m = updateFocusState a (focusState m)
             alg x = pure $ Fix x
 
         c' <- traverse (cataM alg) c
-        pure $ FocusDir c'
+        pure . FocusAction $ FocusDir c'
       _             -> fail "whoops! TODO better msg (dir focus state expandhash match failure)"
 
-    updateFocusState (ExpandHash (CommitType h)) fs = case fs of
-      CommitFocus c -> m <# do
+    updateFocusState (ExpandHash (CommitHash h)) fs = case fs of
+      FocusState (FocusCommit c) -> m <# do
         toJSVal ("expand hash (commit)" ++ show h) >>= logConsole
 
         let alg x@(Compose (h', Compose Nothing))
@@ -251,7 +203,7 @@ updateModel a m = updateFocusState a (focusState m)
             alg x = pure $ Fix x
 
         c' <- traverse (cataM alg) c
-        pure $ FocusCommit c'
+        pure . FocusAction $ FocusCommit c'
       _             -> fail "whoops! TODO better msg (commit focus state expandhash match failure)"
 
     updateFocusState Reset _ = noEff $ m { focusState = NoFocus "" "" ""}
@@ -266,9 +218,9 @@ renderBlob u hb = algDefined $ fmap (cata algFull) hb
     algFull :: (HashAnnotated Blob `Compose` Maybe `Compose` Blob) (View Action) -> View Action
     algFull (Compose (h, Compose Nothing))
           = div_ [ class_ "hashlink blob"]
-          [ text $ toJSString $ "unexpanded branch: " ++ show (unRawIPFSHash (getConst h))
-          , button_ [onClick $ ExpandHash (BlobType h)]
-                    [text $ toJSString $ "expand blob leaf: " ++ show (unRawIPFSHash (getConst h))]
+          [ text $ toJSString $ unRawIPFSHash (getConst h)
+          , button_ [onClick $ ExpandHash (BlobHash h), class_ "blob"]
+                    [text $ toJSString $ unRawIPFSHash (getConst h)]
           ]
     algFull (Compose (h, Compose (Just x))) = algDefined x
 
@@ -294,8 +246,8 @@ renderDir u hd = algDefined $ fmap (cata algFull) hd
     algFull :: (HashAnnotated HashableDir `Compose` Maybe `Compose` HashableDir) (View Action) -> View Action
     algFull (Compose (h, Compose Nothing))
           = div_ [class_ "hashlink dir"]
-                 [button_ [onClick $ ExpandHash (DirType h)]
-                          [text $ toJSString $ "expand leaf: " ++ show (unRawIPFSHash (getConst h))]
+                 [button_ [onClick $ ExpandHash (DirHash h), class_ "dir"]
+                          [text $ toJSString $ unRawIPFSHash (getConst h)]
                  ]
     algFull (Compose (h, Compose (Just x))) = algDefined x
 
@@ -307,7 +259,7 @@ renderDir u hd = algDefined $ fmap (cata algFull) hd
           , ul_ [] $ fmap mkC contents
           ]
 
-    mkC (fp, FileEntity h) = li_ [] [ button_ [onClick $ goBlob u h]
+    mkC (fp, FileEntity h) = li_ [] [ button_ [onClick $ gotoBlob u h, class_ "blob"]
                                               [text $ toJSString $ "file: " ++ fp]
                               ]
     mkC (fp, DirEntity  x) = li_ [] [text $ toJSString $ "dir: " ++ fp, x]
@@ -319,8 +271,8 @@ renderCommit u hc = algDefined $ fmap (cata algFull) hc
     algFull :: (HashAnnotated HashableCommit `Compose` Maybe `Compose` HashableCommit) (View Action) -> View Action
     algFull (Compose (h, Compose Nothing))
           = li_ [class_ "hashlink commit"]
-          [ button_ [onClick $ ExpandHash (CommitType h)]
-                    [text $ toJSString $ "expand: " ++ show (unRawIPFSHash (getConst h))]
+          [ button_ [onClick $ ExpandHash (CommitHash h), class_ "commit"]
+                    [text $ toJSString $ unRawIPFSHash (getConst h)]
           ]
     algFull (Compose (h, Compose (Just x))) = algDefined x
 
@@ -329,8 +281,8 @@ renderCommit u hc = algDefined $ fmap (cata algFull) hc
           = li_ [class_ "entity commit"] $
           [ text $ toJSString $ "msg: " ++ msg
           , br_ []
-          , button_ [onClick $ goDir u root]
-                    [text $ toJSString $ "root dir: " ++ show (unRawIPFSHash (getConst root))]
+          , button_ [onClick $ gotoDir u root, class_ "dir"]
+                    [text $ toJSString $ unRawIPFSHash (getConst root)]
           , br_ []
           ] ++ case parents of
                  [] -> [text "commit has no parents"]
@@ -338,26 +290,6 @@ renderCommit u hc = algDefined $ fmap (cata algFull) hc
                              , br_ []
                              , ul_ [] parents
                              ]
-
-solarizedViolet, solarizedBase3 :: MisoString
-solarizedViolet = "#6c71c4"
-solarizedBase3  = "#fdf6e3"
-solarizedBase02  = "#073642"
-
-
-drawWidget :: View Action
-drawWidget = div_ [] [elem]
--- drawWidget = div_ [style_ attrs] [elem]
-  where
-    elem =  div_ [class_ "myclass"] [text "test text"]
-    -- attrs = M.fromList [ ("border-style", "solid")
-    --                    , ("border-width", "3px")
-    --                    , ("border-color", solarizedViolet)
-    --                    , ("background-color", solarizedBase3)
-    --                    , ("background-color", solarizedBase3)
-    --                    , ("color", solarizedBase02)
-    --                    ]
-
 
 viewModel' :: Model -> View Action
 viewModel' (Model u _ fs) = div_ []
@@ -369,21 +301,21 @@ viewModel' (Model u _ fs) = div_ []
   where
 
     handler Nothing = home fs
-    handler (Just (BlobType    _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (BlobFocus b)   -> div_ [] [text "focus: blob", br_ [], renderBlob u b]
-      x               -> div_ [] [text "unexpected state, (expected BlobFocus)"]
-    handler (Just (DirType     _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (DirFocus d)    -> div_ [] [text "focus: dir", br_ [], renderDir u d]
-      x               -> div_ [] [text "unexpected state, (expected DirFocus)"]
-    handler (Just (CommitType  _h)) = case fs of -- NOTE: doesn't use h, which feels weird
-      (CommitFocus c) -> div_ [] [text "focus: commit", br_ [], renderCommit u c]
-      x               -> div_ [] [text "unexpected state, (expected CommitFocus)"]
+    handler (Just (BlobHash    _h)) = case fs of -- NOTE: doesn't use h, which feels weird
+      (FocusState (FocusBlob b))   -> div_ [] [text "focus: blob", br_ [], renderBlob u b]
+      x               -> div_ [] [text "unexpected state, (expected FocusBlob)"]
+    handler (Just (DirHash     _h)) = case fs of -- NOTE: doesn't use h, which feels weird
+      (FocusState (FocusDir d))    -> div_ [] [text "focus: dir", br_ [], renderDir u d]
+      x               -> div_ [] [text "unexpected state, (expected FocusDir)"]
+    handler (Just (CommitHash  _h)) = case fs of -- NOTE: doesn't use h, which feels weird
+      (FocusState (FocusCommit c)) -> div_ [] [text "focus: commit", br_ [], renderCommit u c]
+      x               -> div_ [] [text "unexpected state, (expected FocusCommit)"]
 
     home (NoFocus b d c) = div_ []
       [ input_ [ type_ "text"
                , autofocus_ True
                , onInput UpdateBlobHashField
-               , onEnter . goBlob u . Const . RawIPFSHash $ fromMisoString b
+               , onEnter . gotoBlob u . Const . RawIPFSHash $ fromMisoString b
                ]
       , br_ []
       , text "press enter to load blob from IPFS daemon via hash"
@@ -392,7 +324,7 @@ viewModel' (Model u _ fs) = div_ []
       , input_ [ type_ "text"
                , autofocus_ True
                , onInput UpdateDirHashField
-               , onEnter . goDir u . Const . RawIPFSHash $ fromMisoString d
+               , onEnter . gotoDir u . Const . RawIPFSHash $ fromMisoString d
                ]
       , br_ []
       , text "press enter to load dir from IPFS daemon via hash"
@@ -401,7 +333,7 @@ viewModel' (Model u _ fs) = div_ []
       , input_ [ type_ "text"
                , autofocus_ True
                , onInput UpdateCommitHashField
-               , onEnter . goCommit u . Const . RawIPFSHash $ fromMisoString c
+               , onEnter . gotoCommit u . Const . RawIPFSHash $ fromMisoString c
                ]
       , br_ []
       , text "press enter to load commit from IPFS daemon via hash"
@@ -410,7 +342,6 @@ viewModel' (Model u _ fs) = div_ []
       , br_ []
       , br_ []
       , br_ []
-      , drawWidget
       ]
     home _ = div_ [] ["not expected state (home but not nofocus - loading release/torrent?)"]
 
@@ -512,29 +443,86 @@ commitPrefix = "#commit:"
 
 fragmentRouting :: String -> Maybe HGitMerkleHash
 fragmentRouting s
-    | blobPrefix   `isPrefixOf` s = Just $ BlobType   $ Const $ RawIPFSHash $ T.pack $ drop (length blobPrefix)   s
-    | dirPrefix    `isPrefixOf` s = Just $ DirType    $ Const $ RawIPFSHash $ T.pack $ drop (length dirPrefix)    s
-    | commitPrefix `isPrefixOf` s = Just $ CommitType $ Const $ RawIPFSHash $ T.pack $ drop (length commitPrefix) s
+    | blobPrefix   `isPrefixOf` s = Just $ BlobHash   $ Const $ RawIPFSHash $ T.pack $ drop (length blobPrefix)   s
+    | dirPrefix    `isPrefixOf` s = Just $ DirHash    $ Const $ RawIPFSHash $ T.pack $ drop (length dirPrefix)    s
+    | commitPrefix `isPrefixOf` s = Just $ CommitHash $ Const $ RawIPFSHash $ T.pack $ drop (length commitPrefix) s
     | otherwise = Nothing -- parse failure or nothing go to, home screen
 
 mkFragment :: Maybe HGitMerkleHash -> String
 mkFragment Nothing = ""
-mkFragment (Just (BlobType h)) = blobPrefix ++ T.unpack (unRawIPFSHash $ getConst h)
-mkFragment (Just (DirType h)) = dirPrefix  ++ T.unpack (unRawIPFSHash $ getConst h)
-mkFragment (Just (CommitType h)) = commitPrefix ++ T.unpack (unRawIPFSHash $ getConst h)
+mkFragment (Just (BlobHash h)) = blobPrefix ++ T.unpack (unRawIPFSHash $ getConst h)
+mkFragment (Just (DirHash h)) = dirPrefix  ++ T.unpack (unRawIPFSHash $ getConst h)
+mkFragment (Just (CommitHash h)) = commitPrefix ++ T.unpack (unRawIPFSHash $ getConst h)
 
-goBlob :: URI -> Hash Blob -> Action
-goBlob u h = ChangeURI $ u { uriFragment = mkFragment (Just $ BlobType h) }
+gotoBlob :: URI -> Hash Blob -> Action
+gotoBlob u h = ChangeURI $ u { uriFragment = mkFragment (Just $ BlobHash h) }
 
-goDir :: URI -> Hash HashableDir -> Action
-goDir u h = ChangeURI $ u { uriFragment = mkFragment (Just $ DirType h) }
+gotoDir :: URI -> Hash HashableDir -> Action
+gotoDir u h = ChangeURI $ u { uriFragment = mkFragment (Just $ DirHash h) }
 
-goCommit :: URI -> Hash HashableCommit -> Action
-goCommit u h = ChangeURI $ u { uriFragment = mkFragment (Just $ CommitType h) }
+gotoCommit :: URI -> Hash HashableCommit -> Action
+gotoCommit u h = ChangeURI $ u { uriFragment = mkFragment (Just $ CommitHash h) }
+
+
+
+type PartiallySubstantiated f = Fix (HashAnnotated f `Compose` Maybe `Compose` f)
+
+-- | Type synonym for an application model
+data FocusState
+  = NoFocus
+      MisoString -- blob hash field value
+      MisoString -- dir hash field value
+      MisoString -- commit hash field value
+
+  -- after entering a hash, can be lazily expanded.. (via hash lookup?)
+  -- NOTE: what if I use IORefs?!
+  | FocusState HGitMerkleFocus
+  deriving (Eq)
+
+data IPFSBase
+  = IPFSDaemon JSString
+  | MockSubdir JSString
+  deriving (Eq, Show)
+
+data Model
+  = Model
+  { uri :: URI -- current URI of application
+  , ipfsBase :: IPFSBase
+  , focusState :: FocusState
+  } deriving (Eq)
+
+data Action
+  = UpdateBlobHashField   MisoString
+  | UpdateDirHashField    MisoString
+  | UpdateCommitHashField MisoString
+
+  | ExpandHash HGitMerkleHash -- used to update a leaf hash of some type if present
+
+  | FocusAction HGitMerkleFocus
+  | DownloadFile FilePath
+
+  -- todo branching sum type? getting kinda big..
+  | HandleURI URI
+  | ChangeURI URI
+
+  | Reset
+  | NoOp
+  deriving (Eq)
+
+data HGitMerkleFocus
+  = FocusBlob   (Blob (PartiallySubstantiated Blob))
+  | FocusDir    (HashableDir (PartiallySubstantiated HashableDir))
+  | FocusCommit (HashableCommit (PartiallySubstantiated HashableCommit))
+  deriving (Eq)
+
+instance Show HGitMerkleFocus where
+  show (FocusCommit _) = "focus commit"
+  show (FocusDir _) = "focus dir"
+  show (FocusBlob _) = "focus blob"
 
 
 data HGitMerkleHash
-  = BlobType   (Hash Blob)
-  | DirType    (Hash HashableDir)
-  | CommitType (Hash HashableCommit)
+  = BlobHash   (Hash Blob)
+  | DirHash    (Hash HashableDir)
+  | CommitHash (Hash HashableCommit)
   deriving (Eq, Show)
