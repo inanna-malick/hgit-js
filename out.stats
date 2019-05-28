@@ -15,7 +15,7 @@ hgit-0.1.0.0-bxnku5lrRqKxoLs113Fsh:176864
 integer-gmp:             86805
 integer-logarithms-1.0.1-LW3KFmZ9B1o6whe2P0dNdZ:4720
 jsaddle-0.9.6.0-32uvs8ysglCjzs9E2Jvym:4414
-main:                    597415
+main:                    597402
 merkle-schemes-0.1.0.0-AHfSG8Up46L6M00VUzMkdY:29066
 miso-0.18.0.0-ITaBFuznj8nEs71lUVOOwB:128386
 network-uri-2.6.1.0-3HfqUjeBtaC2TVNPWGIDfM:321758
@@ -188,7 +188,7 @@ jsaddle-0.9.6.0-32uvs8ysglCjzs9E2Jvym
 
 main
     Css:                                5525
-    Main:                               591889
+    Main:                               591876
     Solarized:                          1
 
 merkle-schemes-0.1.0.0-AHfSG8Up46L6M00VUzMkdY
