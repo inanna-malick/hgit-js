@@ -74,6 +74,7 @@ main = do
     --   >>= maybe (fail "could not convert prompt result to string") pure
     -- TODO: parse relative to URI
     let ipfsBase' = MockSubdir "http://localhost:8000"
+    -- let ipfsBase' = MockSubdir "https://pkinsky.github.io/hgit-js"
     --           uriPath :: String
     -- /ghc
     -- uriQuery :: String
@@ -379,7 +380,7 @@ viewModel' (Model u _ fs) = div_ []
       , input_ [ type_ "text"
                , autofocus_ True
                , onInput UpdateDirHashField
-               , onEnter . goto u . BlobHash . Const . RawIPFSHash $ fromMisoString d
+               , onEnter . goto u . DirHash . Const . RawIPFSHash $ fromMisoString d
                ]
       , br_ []
       , text "press enter to load dir from IPFS daemon via hash"
@@ -388,7 +389,7 @@ viewModel' (Model u _ fs) = div_ []
       , input_ [ type_ "text"
                , autofocus_ True
                , onInput UpdateCommitHashField
-               , onEnter . goto u . BlobHash . Const . RawIPFSHash $ fromMisoString c
+               , onEnter . goto u . CommitHash . Const . RawIPFSHash $ fromMisoString c
                ]
       , br_ []
       , text "press enter to load commit from IPFS daemon via hash"
