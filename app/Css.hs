@@ -14,34 +14,45 @@ myCSS = do
       do background  Sol.base3
          color       Sol.base02
     ".entity" ?
-      do background  Sol.base2
-         -- padding (px 10) (px 5) (px 5) (px 10)
+      do background  Sol.base3
+         padding (px 2) (px 5) (px 5) (px 2)
          color       Sol.base02
          width       (pct 100)
-         borderStyle solid
-         borderWidth (px 2)
-    ".hashlink" ?
-      do background  Sol.base2
-         -- padding (px 10) (px 5) (px 5) (px 10)
-         color       Sol.base02
-         borderStyle dashed
-         borderWidth (px 2)
 
-    ".blob" ? borderColor Sol.violet
-    ".dir" ? borderColor Sol.magenta
-    ".commit" ? borderColor Sol.blue
+
+         borderRightColor Sol.base2
+         borderTopColor Sol.base2
+         borderBottomColor Sol.base2
+
+         borderStyle solid
+         -- borderLeftStyle solid
+         -- borderRightStyle none
+         -- borderTopStyle solid
+         -- borderBottomStyle none
+
+         borderWidth (px 3)
+
+    ul ? do listStyleType none
+
+    ".blob" ? borderLeftColor Sol.violet
+    ".dir" ? borderLeftColor Sol.magenta
+    ".commit" ? borderLeftColor Sol.blue
+
+    pre ?
+      do background Sol.base2
+         padding (px 5) (px 5) (px 5) (px 5)
 
     "button.blob" ?
       do background   Sol.violet
          color        Sol.base3
-         borderRadius (px 7) (px 7) (px 7) (px 7)
+         borderRadius (px 0) (px 5) (px 5) (px 5)
 
     "button.dir" ?
       do background  Sol.magenta
          color       Sol.base3
-         borderRadius (px 7) (px 7) (px 7) (px 7)
+         borderRadius (px 0) (px 5) (px 5) (px 5)
 
     "button.commit" ?
       do background  Sol.blue
          color       Sol.base3
-         borderRadius (px 7) (px 7) (px 7) (px 7)
+         borderRadius (px 0) (px 5) (px 5) (px 5)

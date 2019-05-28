@@ -267,14 +267,14 @@ expandCommitAlg m hgmh (Compose (h, Compose (Just c))) = do -- need to recurse o
 hTable :: URI -> HGitMerkleHash -> View Action -> View Action
 hTable u hgmh v
   = table_ [class_ $ "entity " <> class']
-  [ thead_ [class_ $ "entity " <> class']
-           [th_ [class_ $ "entity " <> class']
-                   [ button_ [onClick $ goto u hgmh, class_ class']
-                             [text header]
-                   ]
-           ]
-  , tbody_ [class_ $ "entity " <> class']
-    [ tr_ [class_ $ "entity " <> class'] [v]]
+  [ tbody_ [class_ $ "entity " <> class']
+    [ tr_ [class_ $ "entity " <> class']
+          [ button_ [onClick $ goto u hgmh, class_ class']
+                    [text header]
+          ]
+
+    , tr_ [class_ $ "entity " <> class'] [v]
+    ]
   ]
   where
     class' = case hgmh of
@@ -291,68 +291,60 @@ renderBlob u hb = blobAlgDefined u $ fmap (cata $ blobAlgFull u) hb
 
 blobAlgFull :: URI -> Algebra (HashAnnotated Blob `Compose` Maybe `Compose` Blob) (View Action)
 blobAlgFull u (Compose (h, Compose Nothing))
-      = div_ [ class_ "hashlink blob"]
-      [ button_ [onClick $ ExpandHash (BlobHash h), class_ "blob"]
+      = button_ [onClick $ ExpandHash (BlobHash h), class_ "blob"]
                 [text $ "expand blob with hash: " <> renderPartialHash h]
-      ]
 blobAlgFull u (Compose (h, Compose (Just x))) = hTable u (BlobHash h) $ blobAlgDefined u x
 
 blobAlgDefined :: URI -> Blob (View Action) -> View Action
-blobAlgDefined u (ChunkList chunks) = div_ [] $ text "blob chunk list:" : chunks
+blobAlgDefined u (ChunkList chunks) = div_ [] $ text "blob chunk list:" : br_ [] : intersperse (br_ []) chunks
 blobAlgDefined u (Chunk contents)
-      = div_ [] $ intersperse (br_ []) $ fmap (text . toJSString . mkNbsp) $ lines contents
-
--- janky function to make sure spaces render right, only supports spaces because I don't use tabs
-mkNbsp :: String -> String
-mkNbsp (' ':xs) = '\160' : mkNbsp xs
-mkNbsp (x:xs) = x : mkNbsp xs
-mkNbsp [] = []
-
-
+      = pre_ [] [text $ toJSString contents]
 
 renderDir :: URI -> PartialDir1 -> View Action
 renderDir u hd = dirAlgDefined u $ fmap (cata $ dirAlgFull u) hd
 
 dirAlgFull :: URI -> Algebra (HashAnnotated HashableDir `Compose` Maybe `Compose` Dir PartialBlob) (View Action)
 dirAlgFull u (Compose (h, Compose Nothing))
-      = div_ [class_ "hashlink dir"]
-             [button_ [onClick $ ExpandHash (DirHash h), class_ "dir"]
-                      [text $ "expand dir with hash: " <> renderPartialHash h]
-             ]
+      = button_ [onClick $ ExpandHash (DirHash h), class_ "dir"]
+                [text $ "expand dir with hash: ", code_ [] [text $ renderPartialHash h]]
 dirAlgFull u (Compose (h, Compose (Just x))) = hTable u (DirHash h) $ dirAlgDefined u x
 
 dirAlgDefined :: URI -> Algebra (Dir PartialBlob) (View Action)
 dirAlgDefined u (Dir contents)
-      = div_ []
-      [ ul_ [] $ fmap mkC contents
-      ]
+      = div_ [] $ intersperse (br_ []) $ fmap mkC contents
+
   where
-    mkC (fp, FileEntity h) = li_ [] [text $ toJSString $ "file: " ++ fp, cata (blobAlgFull u) h]
-    mkC (fp, DirEntity  x) = li_ [] [text $ toJSString $ "dir: "  ++ fp, x]
+    mkC (fp, FileEntity h) = div_ [] [ code_ [] [text $ toJSString fp]
+                                     , code_ [] [text " "]
+                                     , cata (blobAlgFull u) h
+                                     ]
+    mkC (fp, DirEntity  x) = div_ [] [ code_ [] [text $ toJSString $ fp <> "/"]
+                                     , code_ [] [text " "]
+                                     , x
+                                     ]
 
 renderCommit :: URI -> PartialCommit1 -> View Action
 renderCommit u hc = commitAlgDefined u $ fmap (cata $ commitAlgFull u) hc
 
 commitAlgFull :: URI -> Algebra (HashAnnotated HashableCommit `Compose` Maybe `Compose` Commit PartialDir) (View Action)
 commitAlgFull u (Compose (h, Compose Nothing))
-      = li_ [class_ "hashlink commit"]
-      [ button_ [onClick $ ExpandHash (CommitHash h), class_ "commit"]
-                [text $ "expand commit with hash: " <> renderPartialHash h]
-      ]
+      = button_ [onClick $ ExpandHash (CommitHash h), class_ "commit"]
+                [text $ "expand commit with hash: ", code_ [] [text $ renderPartialHash h]]
 commitAlgFull u (Compose (h, Compose (Just x))) = hTable u (CommitHash h) $ commitAlgDefined u x
 
 commitAlgDefined :: URI -> Algebra (Commit PartialDir) (View Action)
 commitAlgDefined u (Commit msg root parents)
       = div_ [] $
-      [ text $ toJSString $ "msg: " ++ msg
+      [ text "commit msg: "
+      , pre_ [] [text $ toJSString msg]
       , br_ []
       , cata (dirAlgFull u) root
       , br_ []
       ] ++ case parents of
               [] -> [text "commit has no parents"]
-              parents' -> [ text "parents: "
+              parents' -> [ text "commit parents: "
                           , br_ []
-                          , ul_ [] $ (\x -> li_ [] [x]) <$> parents
+                          , div_ [] $ intersperse (br_ []) parents
                           ]
 
 viewModel' :: Model -> View Action
